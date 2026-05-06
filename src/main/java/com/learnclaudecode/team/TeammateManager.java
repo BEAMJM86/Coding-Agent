@@ -8,6 +8,7 @@ import com.learnclaudecode.model.ChatMessage;
 import com.learnclaudecode.model.TaskRecord;
 import com.learnclaudecode.tasks.TaskManager;
 import com.learnclaudecode.tools.CommandTools;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -36,6 +37,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 因此，这个类本质上是在回答：
  * “如果一个 Agent 不够用，怎么把一个复杂任务拆给多个持续运行的 Agent 一起完成？”
  */
+@Slf4j
 public class TeammateManager {
     private final WorkspacePaths paths;
     private final AnthropicClient client;
@@ -79,12 +81,14 @@ public class TeammateManager {
      * @return 启动结果
      */
     public synchronized String spawn(String name, String role, String prompt, boolean autonomous) {
+        log.info("创建队友: {}，角色: {}，自治: {}", name, role, autonomous);
         Map<String, Object> config = loadConfig();
         List<Map<String, Object>> members = members(config);
         Map<String, Object> existing = findMember(members, name);
         if (existing != null) {
             String status = String.valueOf(existing.getOrDefault("status", "idle"));
             if (!("idle".equals(status) || "shutdown".equals(status))) {
+                log.warn("队友 {} 当前状态为 {}，无法创建", name, status);
                 return "Error: '" + name + "' is currently " + status;
             }
             existing.put("status", "working");
@@ -101,6 +105,7 @@ public class TeammateManager {
         Thread thread = new Thread(() -> loop(name, role, prompt, autonomous));
         thread.setDaemon(true);
         thread.start();
+        log.debug("队友 {} 线程已启动", name);
         return "Spawned '" + name + "' (role: " + role + ")";
     }
 
@@ -139,6 +144,7 @@ public class TeammateManager {
      * @return 请求发送结果
      */
     public String handleShutdownRequest(String teammate) {
+        log.info("发送关闭请求给队友: {}", teammate);
         String requestId = UUID.randomUUID().toString().substring(0, 8);
         // lead 记录 shutdown 请求状态，后续由队友通过 shutdown_response 回传处理结果。
         shutdownRequests.put(requestId, new ConcurrentHashMap<>(Map.of("target", teammate, "status", "pending")));
@@ -155,8 +161,10 @@ public class TeammateManager {
      * @return 处理结果
      */
     public String handlePlanReview(String requestId, boolean approve, String feedback) {
+        log.info("处理计划审批请求: {}，批准: {}", requestId, approve);
         Map<String, Object> request = planRequests.get(requestId);
         if (request == null) {
+            log.warn("未知的计划请求 ID: {}", requestId);
             return "Error: Unknown plan request_id '" + requestId + "'";
         }
         request.put("status", approve ? "approved" : "rejected");
@@ -175,38 +183,51 @@ public class TeammateManager {
      * @param autonomous 是否自治
      */
     private void loop(String name, String role, String prompt, boolean autonomous) {
+        log.info("队友 {} 开始循环，角色: {}，自治: {}", name, role, autonomous);
         String teamName = String.valueOf(loadConfig().getOrDefault("team_name", "default"));
         String system = autonomous
-                ? "You are '" + name + "', role: " + role + ", team: " + teamName + ", at " + paths.workdir() + ". Use idle when done. You may auto-claim tasks."
-                : "You are '" + name + "', role: " + role + ", at " + paths.workdir() + ". Use send_message to communicate. Complete your task.";
+                ? "You are '" + name + "', role: " + role + ", team: " + teamName + ", at " + paths.workdir() + ". Use idle when done. You may auto-claim tasks. When using send_message, the recipient must be 'lead'."
+                : "You are '" + name + "', role: " + role + ", at " + paths.workdir() + ". Use send_message to communicate with 'lead' (the recipient must be 'lead'). Complete your task.";
         List<ChatMessage> messages = new ArrayList<>();
         List<Map<String, Object>> tools = teammateTools(autonomous);
         messages.add(new ChatMessage("user", prompt));
         while (true) {
             // 队友循环先消费 inbox，再调用模型，和主代理的“消息 -> 推理 -> 工具执行”节奏一致。
-            for (Map<String, Object> inboxMessage : bus.readInbox(name)) {
+            List<Map<String, Object>> inbox = bus.readInbox(name);
+            if (!inbox.isEmpty()) {
+                String senders = inbox.stream()
+                        .map(m -> String.valueOf(m.getOrDefault("from", "?")))
+                        .distinct().collect(java.util.stream.Collectors.joining(", "));
+                log.debug("[team] {} 收到 {} 条消息，来自: {}", name, inbox.size(), senders);
+            }
+            for (Map<String, Object> inboxMessage : inbox) {
                 if ("shutdown_request".equals(inboxMessage.get("type"))) {
                     if (autonomous) {
+                        log.info("[team] {} 收到来自 {} 的关闭请求", name, String.valueOf(inboxMessage.get("from")));
                         setStatus(name, "shutdown");
                         return;
                     }
                 }
                 messages.add(new ChatMessage("user", JsonUtils.toJson(inboxMessage)));
             }
+            log.debug("队友 {} 调用模型，消息数: {}", name, messages.size());
             var response = client.createMessage(system, messages, tools, 4000);
             List<Map<String, Object>> content = response.content();
             messages.add(new ChatMessage("assistant", content));
             if (!"tool_use".equals(response.stop_reason())) {
                 if (autonomous) {
                     // 自治队友在完成当前任务后不会立刻退出，而是先进入 idle，再尝试自动接单。
+                    log.debug("队友 {} 进入空闲状态", name);
                     setStatus(name, "idle");
                     if (!resumeAutonomous(name, role, teamName, messages)) {
+                        log.info("队友 {} 无法恢复工作，关闭", name);
                         setStatus(name, "shutdown");
                         return;
                     }
                     setStatus(name, "working");
                     continue;
                 }
+                log.debug("队友 {} 完成任务，进入空闲", name);
                 setStatus(name, "idle");
                 return;
             }
@@ -219,6 +240,7 @@ public class TeammateManager {
                 String toolName = String.valueOf(block.get("name"));
                 @SuppressWarnings("unchecked")
                 Map<String, Object> input = (Map<String, Object>) block.getOrDefault("input", Map.of());
+                log.debug("队友 {} 执行工具: {}", name, toolName);
                 String output;
                 // 队友工具子集与主代理不同：更强调通信、认领任务和协议响应。
                 switch (toolName) {
@@ -242,6 +264,7 @@ public class TeammateManager {
                         }
                         output = bus.send(name, "lead", String.valueOf(input.getOrDefault("reason", "")), "shutdown_response", Map.of("request_id", reqId, "approve", approve));
                         if (approve) {
+                            log.info("队友 {} 批准关闭请求", name);
                             setStatus(name, "shutdown");
                             return;
                         }
@@ -249,6 +272,7 @@ public class TeammateManager {
                     case "plan_approval" -> {
                         String reqId = UUID.randomUUID().toString().substring(0, 8);
                         String plan = String.valueOf(input.getOrDefault("plan", ""));
+                        log.debug("队友 {} 提交计划审批: {}", name, reqId);
                         planRequests.put(reqId, new ConcurrentHashMap<>(Map.of("from", name, "plan", plan, "status", "pending")));
                         output = bus.send(name, "lead", plan, "plan_approval_response", Map.of("request_id", reqId, "plan", plan));
                     }
@@ -262,8 +286,10 @@ public class TeammateManager {
             }
             messages.add(new ChatMessage("user", results));
             if (autonomous && idleRequested) {
+                log.debug("队友 {} 请求空闲，尝试恢复工作", name);
                 setStatus(name, "idle");
                 if (!resumeAutonomous(name, role, teamName, messages)) {
+                    log.info("队友 {} 无法恢复工作，关闭", name);
                     setStatus(name, "shutdown");
                     return;
                 }
@@ -319,6 +345,7 @@ public class TeammateManager {
      * @return 成功恢复工作时返回 true
      */
     private boolean resumeAutonomous(String name, String role, String teamName, List<ChatMessage> messages) {
+        log.debug("队友 {} 尝试恢复自治工作", name);
         int attempts = 60 / 5;
         for (int i = 0; i < attempts; i++) {
             try {
@@ -330,6 +357,7 @@ public class TeammateManager {
             List<Map<String, Object>> inbox = bus.readInbox(name);
             if (!inbox.isEmpty()) {
                 // 空闲阶段如果收到新消息，优先恢复消息驱动工作，而不是盲目抢任务。
+                log.debug("队友 {} 收到 {} 条新消息，恢复工作", name, inbox.size());
                 for (Map<String, Object> msg : inbox) {
                     if ("shutdown_request".equals(msg.get("type"))) {
                         return false;
@@ -342,6 +370,7 @@ public class TeammateManager {
             if (!unclaimed.isEmpty()) {
                 // 若没有新消息，则尝试自动认领一个未阻塞任务，模拟 s11 的自治行为。
                 TaskRecord task = unclaimed.get(0);
+                log.info("队友 {} 自动认领任务: {} - {}", name, task.id, task.subject);
                 taskManager.claim(task.id, name);
                 if (messages.size() <= 3) {
                     messages.add(0, new ChatMessage("user", "<identity>You are '" + name + "', role: " + role + ", team: " + teamName + ".</identity>"));
@@ -352,6 +381,7 @@ public class TeammateManager {
                 return true;
             }
         }
+        log.debug("队友 {} 无法找到可认领任务", name);
         return false;
     }
 

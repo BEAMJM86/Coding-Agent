@@ -1,6 +1,7 @@
 package com.learnclaudecode.common;
 
 import com.learnclaudecode.model.AnthropicResponse;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.net.URI;
@@ -24,6 +25,7 @@ import java.util.Map;
  * 而是把当前对话历史、system prompt、tool 定义一起发给模型，
  * 再由模型返回文本回答或 tool_use 指令。
  */
+@Slf4j
 public class AnthropicClient {
     private final EnvConfig config;
     private final HttpClient httpClient;
@@ -50,6 +52,7 @@ public class AnthropicClient {
      * @return 模型响应
      */
     public AnthropicResponse createMessage(String system, List<?> messages, List<?> tools, int maxTokens) {
+        log.debug("调用模型 API，消息数: {}，工具数: {}", messages.size(), tools != null ? tools.size() : 0);
         // 请求体字段尽量对齐 Anthropic messages API，便于兼容 Anthropic-compatible 提供方。
         // 这里的 payload 就是一次“大模型推理请求”的完整输入：
         // 1. model: 用哪个模型；
@@ -71,8 +74,10 @@ public class AnthropicClient {
         // Base URL 允许来自 .env，方便接入智谱、OpenRouter 等兼容端点。
         // 这也是 Claude Code 类项目很常见的设计：
         // “上层只关心 Anthropic 风格协议，下层可以替换成任意兼容实现”。
+        String url = config.getBaseUrl().replaceAll("/$", "") + "/v1/messages";
+        //log.debug(“请求 URL: {}”, url);
         HttpRequest.Builder builder = HttpRequest.newBuilder()
-                .uri(URI.create(config.getBaseUrl().replaceAll("/$", "") + "/v1/messages"))
+                .uri(URI.create(url))
                 .timeout(Duration.ofSeconds(180))
                 .header("content-type", "application/json")
                 .header("anthropic-version", "2023-06-01")
@@ -84,15 +89,23 @@ public class AnthropicClient {
 
         try {
             // 这里真正发生网络调用。前面所有 Agent 行为，本质上都是为了准备这次请求。
+            log.debug("发送 HTTP 请求...");
+            long startTime = System.currentTimeMillis();
             HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            long duration = System.currentTimeMillis() - startTime;
+            log.debug("收到响应，状态码: {}，耗时: {}ms", response.statusCode(), duration);
             if (response.statusCode() >= 400) {
                 // 直接把响应体抛出来，方便调试兼容接口返回的错误详情。
+                log.error("API 调用失败: HTTP {} - {}", response.statusCode(), response.body());
                 throw new IllegalStateException("Anthropic API 调用失败: HTTP " + response.statusCode() + "\n" + response.body());
             }
             // 解析后的结果会交回 AgentRuntime，由它判断本轮是文本回复还是 tool_use。
-            return JsonUtils.fromJson(response.body(), AnthropicResponse.class);
+            AnthropicResponse result = JsonUtils.fromJson(response.body(), AnthropicResponse.class);
+            log.debug("响应解析完成，停止原因: {}", result.stop_reason());
+            return result;
         } catch (IOException | InterruptedException e) {
             // 中断时也统一转成业务异常，避免上层每处都重复处理网络细节。
+            log.error("API 调用异常: {}", e.getMessage(), e);
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Anthropic API 调用失败", e);
         }

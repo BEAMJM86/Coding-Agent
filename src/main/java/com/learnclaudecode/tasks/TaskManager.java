@@ -3,6 +3,7 @@ package com.learnclaudecode.tasks;
 import com.learnclaudecode.common.JsonUtils;
 import com.learnclaudecode.common.WorkspacePaths;
 import com.learnclaudecode.model.TaskRecord;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -24,6 +25,7 @@ import java.util.stream.Stream;
  *
  * Agent 的任务规划系统，本质上也只是状态持久化 + 状态流转规则。
  */
+@Slf4j
 public class TaskManager {
     private final Path taskDir;
 
@@ -49,6 +51,7 @@ public class TaskManager {
      * @return 新任务的 JSON 表示
      */
     public synchronized String create(String subject, String description) {
+        log.info("创建任务: {}", subject);
         TaskRecord task = new TaskRecord();
         task.id = nextId();
         task.subject = subject;
@@ -57,6 +60,7 @@ public class TaskManager {
         task.created_at = Instant.now().getEpochSecond();
         task.updated_at = task.created_at;
         save(task);
+        log.debug("任务创建完成，ID: {}", task.id);
         return JsonUtils.toPrettyJson(task);
     }
 
@@ -82,6 +86,7 @@ public class TaskManager {
      * @return 更新后的任务 JSON 或删除结果
      */
     public synchronized String update(int taskId, String status, List<Integer> addBlockedBy, List<Integer> addBlocks) {
+        log.debug("更新任务: {}，状态: {}", taskId, status);
         // 先从磁盘加载目标任务，后续所有修改都基于这份最新记录进行。
         TaskRecord task = load(taskId);
 
@@ -90,14 +95,17 @@ public class TaskManager {
             task.status = status;
             if ("completed".equals(status)) {
                 // 某任务完成后，自动把其他任务对它的 blockedBy 依赖清掉。
+                log.info("任务 {} 已完成，清理依赖关系", taskId);
                 clearDependency(taskId);
             }
             if ("deleted".equals(status)) {
                 // deleted 是一个特殊状态：这里不会把状态写回 JSON，而是直接删除任务文件。
                 // 删除成功后立即返回，不再继续下面的依赖追加和保存流程。
+                log.info("删除任务: {}", taskId);
                 try {
                     Files.deleteIfExists(path(taskId));
                 } catch (IOException e) {
+                    log.error("删除任务 {} 失败: {}", taskId, e.getMessage(), e);
                     throw new IllegalStateException("删除任务失败", e);
                 }
                 return "Task " + taskId + " deleted";
@@ -127,6 +135,7 @@ public class TaskManager {
         // 只要任务没有被删除，这里就刷新更新时间并重新落盘保存。
         task.updated_at = Instant.now().getEpochSecond();
         save(task);
+        log.debug("任务 {} 更新完成", taskId);
 
         // 返回最新任务 JSON，便于调用方直接看到更新后的完整结果。
         return JsonUtils.toPrettyJson(task);
@@ -166,6 +175,7 @@ public class TaskManager {
      * @return 认领结果
      */
     public synchronized String claim(int taskId, String owner) {
+        log.info("任务 {} 被 {} 认领", taskId, owner);
         TaskRecord task = load(taskId);
         task.owner = owner;
         task.status = "in_progress";
@@ -185,6 +195,7 @@ public class TaskManager {
      * @return 可认领任务列表
      */
     public synchronized List<TaskRecord> scanUnclaimed() {
+        log.debug("扫描可认领任务");
         List<TaskRecord> result = new ArrayList<>();
         for (TaskRecord task : loadAll()) {
             // 这里只筛出“当前就可以开始做”的任务：
@@ -193,6 +204,7 @@ public class TaskManager {
                 result.add(task);
             }
         }
+        log.debug("找到 {} 个可认领任务", result.size());
         return result;
     }
 

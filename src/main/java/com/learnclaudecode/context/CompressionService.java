@@ -4,6 +4,7 @@ import com.learnclaudecode.common.AnthropicClient;
 import com.learnclaudecode.common.JsonUtils;
 import com.learnclaudecode.common.WorkspacePaths;
 import com.learnclaudecode.model.ChatMessage;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -26,6 +27,7 @@ import java.util.Map;
  * 2. 如果还不够，再做 auto compact：把完整对话转存，再生成摘要；
  * 3. 用“摘要 + 确认消息”替换旧历史，让 Agent 能继续干活。
  */
+@Slf4j
 public class CompressionService {
     private final WorkspacePaths paths;
     private final AnthropicClient client;
@@ -67,42 +69,44 @@ public class CompressionService {
      * @param messages 消息历史
      */
     public void microCompact(List<ChatMessage> messages) {
+        log.debug("执行微压缩，当前消息数: {}", messages.size());
         // 微压缩只清理较老的 tool_result 大文本，尽量保留最近几轮完整上下文。
-        List<Map<String, Object>> toolResults = new ArrayList<>();
-        for (ChatMessage message : messages) {
-            // 只有 user 角色且 content 是结构化列表时，才可能包含 tool_result 片段。
-            // 普通文本消息或 assistant 消息在这里直接跳过。
+        // 记录所有 tool_result 的位置：(messageIndex, partIndex, map)
+        record Location(int msgIdx, int partIdx, Map<String, Object> map) {}
+        List<Location> toolResults = new ArrayList<>();
+        for (int mi = 0; mi < messages.size(); mi++) {
+            ChatMessage message = messages.get(mi);
             if (!"user".equals(message.role()) || !(message.content() instanceof List<?> parts)) {
                 continue;
             }
-            for (Object part : parts) {
-                // 每个 part 可能是一个结构化块，这里只提取 type=tool_result 的部分。
-                if (part instanceof Map<?, ?> raw) {
-                    Object type = raw.get("type");
-                    if ("tool_result".equals(type)) {
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> typed = (Map<String, Object>) part;
-                        // 收集到单独列表中，后面统一按“从旧到新”的顺序处理。
-                        toolResults.add(typed);
-                    }
+            for (int pi = 0; pi < parts.size(); pi++) {
+                Object part = parts.get(pi);
+                if (part instanceof Map<?, ?> raw && "tool_result".equals(raw.get("type"))) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> typed = (Map<String, Object>) part;
+                    toolResults.add(new Location(mi, pi, typed));
                 }
             }
         }
-        // 如果工具结果总数本来就不多，说明上下文压力还不大，直接保留全部原文。
         if (toolResults.size() <= keepRecent) {
+            log.debug("工具结果数量 {} 未超过阈值 {}，跳过微压缩", toolResults.size(), keepRecent);
             return;
         }
-        // 只清理较老的结果，最后 keepRecent 条保持原样，尽量保留最近操作的完整细节。
+        int clearedCount = 0;
         for (int i = 0; i < toolResults.size() - keepRecent; i++) {
-            Map<String, Object> result = toolResults.get(i);
-            Object content = result.get("content");
-            // 这里只处理字符串类型的大文本结果。
-            // 如果内容较短，或者不是字符串结构，就保留原值不动。
+            Location loc = toolResults.get(i);
+            Object content = loc.map.get("content");
             if (content instanceof String text && text.length() > 100) {
-                // 用固定占位符替换真实输出，达到“保留调用痕迹、删除大块正文”的目的。
-                result.put("content", "[cleared]");
+                // 创建可变副本并替换原始列表中的引用
+                Map<String, Object> mutable = new java.util.HashMap<>(loc.map);
+                mutable.put("content", "[cleared]");
+                @SuppressWarnings("unchecked")
+                List<Object> parts = (List<Object>) messages.get(loc.msgIdx).content();
+                parts.set(loc.partIdx, mutable);
+                clearedCount++;
             }
         }
+        log.debug("微压缩完成，清理了 {} 个工具结果", clearedCount);
     }
 
     /**
@@ -116,6 +120,7 @@ public class CompressionService {
      * @return 压缩后的消息历史
      */
     public List<ChatMessage> autoCompact(List<ChatMessage> messages) {
+        log.info("开始自动压缩，当前消息数: {}", messages.size());
         try {
             // 先确保 .transcripts 目录存在，后续会把完整历史落盘到这里。
             Files.createDirectories(paths.transcriptDir());
@@ -128,15 +133,18 @@ public class CompressionService {
             }
             // 到这里为止，完整历史已经被安全保存；后面即使上下文被压缩，也还能回溯原文。
             Files.write(transcript, lines, StandardCharsets.UTF_8);
+            log.debug("对话历史已保存到: {}", transcript);
 
             // 再把整段消息历史整体转成 JSON，作为“请模型总结上下文”的原始材料。
             String conversation = JsonUtils.toJson(messages);
+            log.debug("对话内容长度: {} 字符", conversation.length());
 
             // 提示词要求模型总结：已完成事项、当前状态、关键决策。
             // 同时限制输入长度，避免摘要请求本身过大。
             String prompt = "Summarize this conversation for continuity. Include what was accomplished, current state, and key decisions.\n\n"
                     + conversation.substring(0, Math.min(80000, conversation.length()));
             // 摘要本身也交给模型生成，这样能尽量保留任务状态而不是机械截断历史。
+            log.debug("调用模型生成摘要...");
             String summary = client.createMessage(null, List.of(Map.of("role", "user", "content", prompt)), List.of(), 2000)
                     .content()
                     .stream()
@@ -145,6 +153,7 @@ public class CompressionService {
                     .map(block -> String.valueOf(block.get("text")))
                     .findFirst()
                     .orElse("(summary unavailable)");
+            log.debug("摘要生成完成，长度: {} 字符", summary.length());
 
             // 构造压缩后的新上下文：
             // 第一条 user 消息包含 transcript 路径和摘要，提醒后续 Agent 如需细节可回看原记录；
@@ -152,9 +161,11 @@ public class CompressionService {
             List<ChatMessage> compacted = new ArrayList<>();
             compacted.add(new ChatMessage("user", "[Conversation compressed. Transcript: " + transcript + "]\n\n" + summary));
             compacted.add(new ChatMessage("assistant", "Understood. I have the context from the summary. Continuing."));
+            log.info("自动压缩完成，压缩后消息数: {}", compacted.size());
             return compacted;
         } catch (IOException e) {
             // 这里主要兜底文件落盘失败的情况；如果 transcript 都写不下来，就直接抛出异常。
+            log.error("压缩会话失败: {}", e.getMessage(), e);
             throw new IllegalStateException("压缩会话失败", e);
         }
     }
@@ -166,6 +177,11 @@ public class CompressionService {
      * @return 超过阈值时返回 true
      */
     public boolean needsAutoCompact(List<ChatMessage> messages) {
-        return estimateTokens(messages) > threshold;
+        int estimatedTokens = estimateTokens(messages);
+        boolean needs = estimatedTokens > threshold;
+        if (needs) {
+            log.debug("需要自动压缩: 估算 token 数 {} 超过阈值 {}", estimatedTokens, threshold);
+        }
+        return needs;
     }
 }

@@ -2,6 +2,7 @@ package com.learnclaudecode.background;
 
 import com.learnclaudecode.common.WorkspacePaths;
 import com.learnclaudecode.tools.CommandTools;
+import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -17,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * 后台任务管理器，对齐 s08 的异步执行与通知机制。
  */
+@Slf4j
 public class BackgroundManager {
     private final WorkspacePaths paths;
     private final CommandTools commandTools;
@@ -42,6 +44,7 @@ public class BackgroundManager {
      */
     public String run(String command, int timeoutSeconds) {
         String taskId = UUID.randomUUID().toString().substring(0, 8);
+        log.info("启动后台任务 {}: {} (超时: {}s)", taskId, command, timeoutSeconds);
         tasks.put(taskId, new ConcurrentHashMap<>(Map.of(
                 "status", "running",
                 "command", command,
@@ -66,6 +69,7 @@ public class BackgroundManager {
      * @param timeoutSeconds 超时时间
      */
     private void execute(String taskId, String command, int timeoutSeconds) {
+        log.debug("开始执行后台任务 {}: {}", taskId, command);
         String status;
         String result;
         try {
@@ -77,6 +81,7 @@ public class BackgroundManager {
 
             // 真正启动子进程。启动成功后，命令会在当前后台线程对应的子进程中运行。
             Process process = builder.start();
+            log.debug("后台任务 {} 进程已启动", taskId);
 
             // 在给定超时时间内阻塞等待命令结束。
             // finished=true 表示进程已正常结束；false 表示到时间仍未结束。
@@ -86,6 +91,7 @@ public class BackgroundManager {
                 process.destroyForcibly();
                 status = "timeout";
                 result = "Error: Timeout (" + timeoutSeconds + "s)";
+                log.warn("后台任务 {} 执行超时", taskId);
             } else {
                 // 命令结束后同时读取标准输出和标准错误，
                 // 然后把两者拼接成统一结果，便于调用方一次查看完整输出。
@@ -99,12 +105,14 @@ public class BackgroundManager {
                     result = "(no output)";
                 }
                 status = "completed";
+                log.debug("后台任务 {} 执行完成", taskId);
             }
         } catch (Exception e) {
             // 启动进程、等待进程或读取输出时只要出现异常，
             // 都统一记为 error，并把异常信息写入结果字段。
             status = "error";
             result = "Error: " + e.getMessage();
+            log.error("后台任务 {} 执行异常: {}", taskId, e.getMessage(), e);
         }
         // 执行结束后同时更新任务表和通知队列，供主循环在后续轮次注入结果。
         // tasks 保存的是该任务的完整当前状态，供 check(...) 查询。
@@ -129,9 +137,11 @@ public class BackgroundManager {
      * @return 任务状态文本
      */
     public String check(String taskId) {
+        log.debug("查询后台任务状态: {}", taskId);
         if (taskId != null && !taskId.isBlank()) {
             Map<String, Object> task = tasks.get(taskId);
             if (task == null) {
+                log.warn("查询未知任务: {}", taskId);
                 return "Error: Unknown task " + taskId;
             }
             return "[" + task.get("status") + "] " + task.get("command") + "\n" + task.get("result");

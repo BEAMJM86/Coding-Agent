@@ -5,3 +5,4 @@ target/
 .tasks/
 .team/
 .worktrees/
+/temp/log.txt
