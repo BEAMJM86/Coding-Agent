@@ -34,7 +34,7 @@ public class CommandTools {
      * @return 命令输出或错误信息
      */
     public String runBash(String command) {
-        // 这里只做最小黑名单拦截，目的是对齐教学项目的“轻量保护”而不是实现完整沙箱。
+        // 最小黑名单拦截，阻止明显危险的命令。
         for (String danger : DANGEROUS) {
             if (command.contains(danger)) {
                 return "Error: Dangerous command blocked";

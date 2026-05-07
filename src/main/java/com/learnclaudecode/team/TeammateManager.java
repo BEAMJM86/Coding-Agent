@@ -23,7 +23,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 队友管理器，统一承载 s09-s11 的持续线程、消息协议与自治认领能力。
+ * 队友管理器，承载持续线程、消息协议与自治认领能力。
  *
  * 这个类对应的是 Claude Code / Agent 系统里非常重要的一步升级：
  * 从“单个 Agent 自己干活”，升级到“多个 Agent 分工协作”。
@@ -356,7 +356,7 @@ public class TeammateManager {
             }
             List<Map<String, Object>> inbox = bus.readInbox(name);
             if (!inbox.isEmpty()) {
-                // 空闲阶段如果收到新消息，优先恢复消息驱动工作，而不是盲目抢任务。
+                // 收到新消息时优先恢复消息驱动工作，而不是盲目抢任务。
                 log.debug("队友 {} 收到 {} 条新消息，恢复工作", name, inbox.size());
                 for (Map<String, Object> msg : inbox) {
                     if ("shutdown_request".equals(msg.get("type"))) {
@@ -368,7 +368,7 @@ public class TeammateManager {
             }
             List<TaskRecord> unclaimed = taskManager.scanUnclaimed();
             if (!unclaimed.isEmpty()) {
-                // 若没有新消息，则尝试自动认领一个未阻塞任务，模拟 s11 的自治行为。
+                // 若没有新消息，则尝试自动认领一个未阻塞任务。
                 TaskRecord task = unclaimed.get(0);
                 log.info("队友 {} 自动认领任务: {} - {}", name, task.id, task.subject);
                 taskManager.claim(task.id, name);

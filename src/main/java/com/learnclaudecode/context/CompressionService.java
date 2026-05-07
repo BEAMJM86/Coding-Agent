@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 上下文压缩服务，对齐 s06 的三层压缩思想。
+ * 上下文压缩服务，实现三层压缩策略。
  *
  * 这个类要解决的是 Agent 项目里一个非常现实的问题：
  * 对话越长，发给模型的历史就越多，最终一定会碰到上下文窗口上限。
@@ -57,7 +57,7 @@ public class CompressionService {
      */
     public int estimateTokens(List<ChatMessage> messages) {
         // 这里没有做精确 tokenizer，而是用 JSON 长度 / 4 做近似估算。
-        // 对教学项目来说，这种轻量估算已经足够判断“是否快超窗”。
+        // 用 JSON 长度 / 4 做近似估算，足以判断是否接近上下文窗口上限。
         return JsonUtils.toJson(messages).length() / 4;
     }
 
@@ -111,7 +111,7 @@ public class CompressionService {
 
     /**
      * 将完整历史转存并生成摘要上下文。
-     * 这个方法对应“真正的自动压缩”阶段：
+     * 执行自动压缩：
      * 1. 先把当前完整对话历史原样写入 transcript 文件，保证细节可追溯；
      * 2. 再把整段历史整理成一个摘要请求发给模型；
      * 3. 最后用“摘要消息 + assistant 确认消息”替换原来的长历史。

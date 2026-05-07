@@ -48,7 +48,7 @@ public class SkillLoader {
             Map<String, String> meta = new HashMap<>();
             String body = text;
             if (text.startsWith("---\n")) {
-                // 这里只解析最简单的 frontmatter，足够支持 name/description 等教学场景字段。
+                // 只解析最简单的 frontmatter（name/description 等字段）。
                 int second = text.indexOf("\n---\n", 4);
                 if (second > 0) {
                     String header = text.substring(4, second);

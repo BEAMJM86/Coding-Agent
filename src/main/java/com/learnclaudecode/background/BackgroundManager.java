@@ -16,7 +16,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 后台任务管理器，对齐 s08 的异步执行与通知机制。
+ * 后台任务管理器，提供异步执行与通知机制。
  */
 @Slf4j
 public class BackgroundManager {

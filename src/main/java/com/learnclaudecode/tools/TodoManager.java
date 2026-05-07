@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Todo 管理器，支持 s03 与 s_full 中的不同字段风格。
+ * Todo 管理器，支持不同字段风格。
  */
 public class TodoManager {
     private List<Map<String, Object>> items = new ArrayList<>();

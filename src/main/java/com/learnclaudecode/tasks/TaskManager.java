@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.stream.Stream;
 
 /**
- * 文件任务系统，对齐 s07/s11/s12 的任务持久化模式。
+ * 文件任务系统，提供任务持久化与多 Agent 协作支持。
  *
  * 这个类实现的是一个简单但能表征核心的任务板：
  * - 每个任务都是一个 JSON 文件；

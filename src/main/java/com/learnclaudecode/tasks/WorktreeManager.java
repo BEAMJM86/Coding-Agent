@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * worktree 管理器，对齐 s12 的目录隔离语义。
+ * worktree 管理器，提供任务级别的目录隔离。
  * 这个类负责维护一套轻量的“任务 <-> worktree”映射关系：
  * 1. 在 .worktrees 下创建和移除独立目录；
  * 2. 在 index.json 中保存当前 worktree 清单；

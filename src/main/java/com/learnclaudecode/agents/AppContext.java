@@ -14,17 +14,13 @@ import com.learnclaudecode.tools.CommandTools;
 import com.learnclaudecode.tools.TodoManager;
 
 /**
- * 应用装配器，集中创建共享服务。
+ * 应用装配器，集中创建并连接所有共享服务。
  *
- * 这个类可以把整个项目理解成一个“总装车间”：
- * 1. 先读取环境配置，知道模型、API 地址、工作目录是什么；
- * 2. 再创建最基础的能力，例如命令执行、文件读写、路径管理；
- * 3. 然后在这些基础能力之上，继续创建更高层的 Agent 机制，
- *    比如 Todo、上下文压缩、任务系统、后台任务、团队通信、worktree；
- * 4. 最后把它们全部交给 AgentRuntime，由它统一驱动整个 Agent 循环。
- *
- * 对初学者来说，理解这个类很重要，因为它回答了一个核心问题：
- * “一个 Agent 项目到底由哪些运行时部件组成，它们是怎么被连接起来的？”
+ * 负责按”基础能力 -> 扩展机制 -> 运行时”的顺序装配整个 Agent 系统：
+ * 1. 读取环境配置（模型、API 地址、工作目录）；
+ * 2. 创建基础能力（命令执行、文件读写、路径管理）；
+ * 3. 创建扩展机制（Todo、上下文压缩、任务系统、后台任务、团队通信、worktree）；
+ * 4. 将所有服务交给 AgentRuntime 统一驱动。
  */
 public final class AppContext {
     private final AgentRuntime runtime;
@@ -37,10 +33,7 @@ public final class AppContext {
         EnvConfig env = new EnvConfig();
         WorkspacePaths paths = new WorkspacePaths(env.getWorkdir());
 
-        // 下面按“基础能力 -> 扩展机制 -> 总运行时”的顺序创建共享服务。
-        // 这样设计有两个好处：
-        // 1. 每个阶段入口类都不需要重复写装配代码；
-        // 2. 学习时可以很清楚地看到 Claude Code 风格 Agent 的分层结构。
+        // 按”基础能力 -> 扩展机制 -> 运行时”的顺序创建共享服务。
         AnthropicClient client = new AnthropicClient(env);
         CommandTools commandTools = new CommandTools(paths);
         TodoManager todoManager = new TodoManager();

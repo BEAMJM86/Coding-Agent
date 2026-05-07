@@ -22,12 +22,9 @@ import java.util.Map;
 import java.util.Scanner;
 
 /**
- * 通用 agent 运行时，通过能力开关映射 s01-s12 与 s_full 的不同阶段。
+ * Agent 核心运行时。
  *
- * 如果只看一个类来理解“Claude Code 风格 Agent 是怎么跑起来的”，
- * 那么最值得读的就是这个类。
- *
- * 它负责实现最核心的 Agent 闭环：
+ * 实现最核心的 Agent 闭环：
  * 1. 接收用户输入，写入消息历史；
  * 2. 带着 system prompt、messages、tools 调用大模型；
  * 3. 如果模型返回普通文本，就把它展示给用户；
@@ -35,8 +32,7 @@ import java.util.Scanner;
  * 5. 再把工具结果作为新的消息塞回历史，继续下一轮；
  * 6. 一直循环到模型停止调用工具为止。
  *
- * 这也是绝大多数 Agent 框架最本质的运行机制：
- * “LLM 负责决定下一步动作，本地运行时负责真正执行动作并反馈结果”。
+ * 核心机制：LLM 负责决定下一步动作，本地运行时负责真正执行动作并反馈结果。
  */
 @Slf4j
 public class AgentRuntime {
@@ -94,14 +90,14 @@ public class AgentRuntime {
     /**
      * 启动 REPL 交互循环。
      *
-     * @param config 当前阶段配置
+     * @param config 能力配置
      */
     public void runRepl(StageConfig config) {
-        log.info("启动 REPL 交互循环，阶段: {}", config.prompt());
+        log.info("启动 REPL 交互循环: {}", config.prompt());
         List<ChatMessage> history = new ArrayList<>();
         Scanner scanner = new Scanner(System.in);
         while (true) {
-            // 每个阶段都使用不同的 prompt 前缀。
+            // 显示 prompt 前缀。
             System.out.print("\u001B[36m" + config.prompt() + " >> \u001B[0m");
             if (!scanner.hasNextLine()) {
                 log.debug("输入流结束，退出 REPL");
@@ -113,7 +109,7 @@ public class AgentRuntime {
                 break;
             }
             log.info("用户输入: {}", query);
-            // 用户输入首先会变成一条 user 消息，正式进入 Agent 的消息历史。
+            // 用户输入进入 Agent 的消息历史。
             history.add(new ChatMessage("user", query));
             agentLoop(history, config);
             Object content = history.get(history.size() - 1).content();
@@ -132,16 +128,15 @@ public class AgentRuntime {
      * 执行单轮任务的 Agent 主循环，直到模型停止调用工具。
      *
      * @param messages 当前消息历史
-     * @param config 当前阶段配置
+     * @param config 能力配置
      */
     public void agentLoop(List<ChatMessage> messages, StageConfig config) {
         log.debug("开始 agent 循环，当前消息数: {}", messages.size());
         int roundsWithoutTodo = 0;
         while (true) {
-            // 这里的 while(true) 就是 Agent 的主循环。
-            // 每次循环都可以理解成一次“观察当前上下文 -> 调模型 -> 执行动作 -> 更新上下文”的决策周期。
+            // Agent 主循环：观察上下文 -> 调模型 -> 执行动作 -> 更新上下文。
             if (config.enableCompression()) {
-                // 先做轻量裁剪，尽量不打断对话；只有达到阈值时才做真正压缩。
+                // 轻量裁剪 + 阈值触发真正压缩。
                 compressionService.microCompact(messages);
                 if (compressionService.needsAutoCompact(messages)) {
                     log.info("触发自动压缩，当前消息数: {}", messages.size());
@@ -152,7 +147,7 @@ public class AgentRuntime {
                 }
             }
             if (config.enableBackground()) {
-                // 后台任务结果不会直接丢失，而是作为新的 user 消息重新注入主上下文。
+                // 后台任务结果作为新的 user 消息注入主上下文。
                 List<Map<String, Object>> notifs = backgroundManager.drain();
                 if (!notifs.isEmpty()) {
                     StringBuilder builder = new StringBuilder();
@@ -166,22 +161,20 @@ public class AgentRuntime {
                 }
             }
             if (config.enableInbox()) {
-                // 团队阶段的 lead 会周期性轮询 inbox，把队友消息拼回对话历史中。
+                // 周期性轮询 inbox，把队友消息注入对话历史。
                 List<Map<String, Object>> inbox = messageBus.readInbox("lead");
                 if (!inbox.isEmpty()) {
                     messages.add(new ChatMessage("user", "<inbox>" + JsonUtils.toPrettyJson(inbox) + "</inbox>"));
                     messages.add(new ChatMessage("assistant", "Noted inbox messages."));
                 }
             }
-            // 统一通过 Anthropic-compatible messages API 获取下一步行动。
-            // 注意：这里不是“让模型一次性做完整任务”，而是只问模型“当前这一步该做什么”。
-            // 这正是 Agent 与普通聊天调用的差异所在。
+            // 通过 messages API 获取下一步行动（单步决策，而非一次性完成任务）。
             log.debug("调用模型 API，消息数: {}", messages.size());
             var response = client.createMessage(config.systemPrompt(skillLoader, paths.workdir()), messages, config.tools(), 8000);
             log.debug("模型响应，停止原因: {}", response.stop_reason());
             messages.add(new ChatMessage("assistant", response.content()));
             if (!"tool_use".equals(response.stop_reason())) {
-                // 不是 tool_use 就说明模型已经给出最终回复，本轮循环结束。
+                // 模型给出最终回复，本轮循环结束。
                 log.debug("模型完成回复，退出循环");
                 return;
             }
@@ -195,8 +188,7 @@ public class AgentRuntime {
                 String toolName = String.valueOf(block.get("name"));
                 @SuppressWarnings("unchecked")
                 Map<String, Object> input = (Map<String, Object>) block.getOrDefault("input", Map.of());
-                // 把模型声明的工具调用映射到本地 Java 实现。
-                // 你可以把这段 switch 理解成“模型动作意图 -> Java 真实执行逻辑”的翻译层。
+                // 将模型声明的工具调用映射到本地 Java 实现。
                 log.debug("执行工具: {}", toolName);
                 String output = switch (toolName) {
                     case "bash" -> commandTools.runBash(String.valueOf(input.get("command")));
@@ -212,7 +204,7 @@ public class AgentRuntime {
                     case "task" -> runSubagent(String.valueOf(input.get("prompt")), config.subagentWritable());
                     case "load_skill" -> skillLoader.getContent(String.valueOf(input.get("name")));
                     case "compact" -> {
-                        // 手动压缩不会马上丢历史，而是在本轮工具结果写回后再执行真正压缩。
+                        // 手动压缩在本轮工具结果写回后执行。
                         manualCompact = true;
                         yield "Compressing...";
                     }
@@ -221,7 +213,7 @@ public class AgentRuntime {
                     case "task_create" -> taskManager.create(String.valueOf(input.get("subject")), String.valueOf(input.getOrDefault("description", "")));
                     case "task_get" -> taskManager.get(numberOrDefault(input.get("task_id"), 0));
                     case "task_update" -> {
-                        // 兼容蛇形和驼峰两种字段名，降低不同模型输出风格带来的失败概率。
+                        // 兼容蛇形和驼峰两种字段名。
                         @SuppressWarnings("unchecked")
                         List<Integer> addBlockedBy = (List<Integer>) input.getOrDefault("add_blocked_by", input.getOrDefault("addBlockedBy", null));
                         @SuppressWarnings("unchecked")
@@ -251,11 +243,10 @@ public class AgentRuntime {
                         "content", output
                 ));
             }
-            // 所有工具执行完后，会把结果重新作为 user 侧消息喂回模型。
-            // 这样模型下一轮就能基于“刚刚执行后的真实世界状态”继续推理。
+            // 工具结果作为 user 侧消息喂回模型，下一轮基于真实状态继续推理。
             roundsWithoutTodo = usedTodo ? 0 : roundsWithoutTodo + 1;
             if (config.enableTodoNag() && roundsWithoutTodo >= 3) {
-                // s03/s_full 中如果多轮没有更新 todo，会主动给模型追加提醒。
+                // 多轮没有更新 todo 时主动追加提醒。
                 Map<String, Object> reminder = new LinkedHashMap<>();
                 reminder.put("type", "text");
                 reminder.put("text", "<reminder>Update your todos.</reminder>");
@@ -264,7 +255,7 @@ public class AgentRuntime {
             messages.add(new ChatMessage("user", results));
             if (manualCompact) {
                 log.info("执行手动压缩，当前消息数: {}", messages.size());
-                // 手动压缩后直接用“摘要 + 已确认”两条消息替代旧上下文。
+                // 用”摘要 + 已确认”两条消息替代旧上下文。
                 List<ChatMessage> compacted = compressionService.autoCompact(messages);
                 messages.clear();
                 messages.addAll(compacted);
@@ -282,18 +273,17 @@ public class AgentRuntime {
      */
     private String runSubagent(String prompt, boolean writable) {
         log.info("启动子代理，任务: {}, 可写: {}", prompt, writable);
-        // subagent 的本质是“新开一个更小的 Agent 上下文”，而不是起一个全新进程。
-        // 这样做的目的，是把某个子问题与主问题隔离开，避免主上下文被探索细节污染。
+        // 子代理拥有独立的消息上下文，与主问题隔离。
         List<Map<String, Object>> subTools = new ArrayList<>(StageConfig.baseTools());
         if (!writable) {
-            // 某些阶段只允许子代理做只读探索，避免在不受控上下文里直接改文件。
+            // 只读模式：移除写文件工具。
             subTools.removeIf(tool -> List.of("write_file", "edit_file").contains(tool.get("name")));
         }
         List<ChatMessage> subMessages = new ArrayList<>();
         subMessages.add(new ChatMessage("user", prompt));
         for (int i = 0; i < 30; i++) {
             log.debug("子代理第 {} 轮循环", i + 1);
-            // 子代理和主代理共享同一个模型客户端，但拥有完全独立的消息上下文。
+            // 子代理共享模型客户端，但拥有独立的消息上下文。
             var response = client.createMessage("You are a coding subagent at " + paths.workdir() + ". Complete the task, then summarize.", subMessages, subTools, 8000);
             subMessages.add(new ChatMessage("assistant", response.content()));
             if (!"tool_use".equals(response.stop_reason())) {
@@ -334,7 +324,7 @@ public class AgentRuntime {
      * @return 解析结果，无法解析或为空时返回 null
      */
     private Integer numberOrNull(Object value) {
-        // 模型返回的 JSON 字段有时是数字，有时是字符串；这里统一做容错解析。
+        // 兼容数字和字符串两种类型。
         if (value instanceof Number number) {
             return number.intValue();
         }
