@@ -3,7 +3,6 @@ package com.learnclaudecode.team;
 import com.learnclaudecode.common.AnthropicClient;
 import com.learnclaudecode.common.JsonUtils;
 import com.learnclaudecode.common.WorkspacePaths;
-import com.learnclaudecode.agents.StageConfig;
 import com.learnclaudecode.model.ChatMessage;
 import com.learnclaudecode.model.TaskRecord;
 import com.learnclaudecode.tasks.TaskManager;
@@ -26,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 队友管理器，承载持续线程、消息协议与自治认领能力。
  *
  * 这个类对应的是 Claude Code / Agent 系统里非常重要的一步升级：
- * 从“单个 Agent 自己干活”，升级到“多个 Agent 分工协作”。
+ * 从”单个 Agent 自己干活”，升级到”多个 Agent 分工协作”。
  *
  * 在这个项目里：
  * - lead 是主代理；
@@ -36,6 +35,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * 因此，这个类本质上是在回答：
  * “如果一个 Agent 不够用，怎么把一个复杂任务拆给多个持续运行的 Agent 一起完成？”
+ *
+ * @author BEAM
  */
 @Slf4j
 public class TeammateManager {
@@ -186,8 +187,8 @@ public class TeammateManager {
         log.info("队友 {} 开始循环，角色: {}，自治: {}", name, role, autonomous);
         String teamName = String.valueOf(loadConfig().getOrDefault("team_name", "default"));
         String system = autonomous
-                ? "You are '" + name + "', role: " + role + ", team: " + teamName + ", at " + paths.workdir() + ". Use idle when done. You may auto-claim tasks. When using send_message, the recipient must be 'lead'."
-                : "You are '" + name + "', role: " + role + ", at " + paths.workdir() + ". Use send_message to communicate with 'lead' (the recipient must be 'lead'). Complete your task.";
+                ? "You are '" + name + "', role: " + role + ", team: " + teamName + ", at " + paths.workdir() + ". Use idle when done. You may auto-claim tasks. When using send_message, the recipient must be 'lead', and msg_type must be one of: message, shutdown_response, plan_approval_response. Use claim_task to claim tasks — do not send claim_task messages."
+                : "You are '" + name + "', role: " + role + ", at " + paths.workdir() + ". Use send_message to communicate with 'lead' (recipient must be 'lead'; valid msg_type values: message, shutdown_response, plan_approval_response). To report task completion, use send_message with msg_type='message' — do NOT use task_complete or claim_task as msg_type. Use read_file, write_file, edit_file, bash to do actual work.";
         List<ChatMessage> messages = new ArrayList<>();
         List<Map<String, Object>> tools = teammateTools(autonomous);
         messages.add(new ChatMessage("user", prompt));
@@ -244,10 +245,10 @@ public class TeammateManager {
                 String output;
                 // 队友工具子集与主代理不同：更强调通信、认领任务和协议响应。
                 switch (toolName) {
-                    case "bash" -> output = commandTools.runBash(String.valueOf(input.get("command")));
-                    case "read_file" -> output = commandTools.runRead(String.valueOf(input.get("path")), null);
-                    case "write_file" -> output = commandTools.runWrite(String.valueOf(input.get("path")), String.valueOf(input.get("content")));
-                    case "edit_file" -> output = commandTools.runEdit(String.valueOf(input.get("path")), String.valueOf(input.get("old_text")), String.valueOf(input.get("new_text")));
+                    case "bash" -> output = commandTools.bash(String.valueOf(input.get("command")));
+                    case "read_file" -> output = commandTools.readFile(String.valueOf(input.get("path")), null);
+                    case "write_file" -> output = commandTools.writeFile(String.valueOf(input.get("path")), String.valueOf(input.get("content")));
+                    case "edit_file" -> output = commandTools.editFile(String.valueOf(input.get("path")), String.valueOf(input.get("old_text")), String.valueOf(input.get("new_text")));
                     case "send_message" -> output = bus.send(name, String.valueOf(input.get("to")), String.valueOf(input.get("content")), String.valueOf(input.getOrDefault("msg_type", "message")), Map.of());
                     case "read_inbox" -> output = JsonUtils.toPrettyJson(bus.readInbox(name));
                     case "claim_task" -> output = taskManager.claim(((Number) input.get("task_id")).intValue(), name);
@@ -305,8 +306,11 @@ public class TeammateManager {
      * @return 工具定义列表
      */
     private List<Map<String, Object>> teammateTools(boolean autonomous) {
-        // 队友工具以 baseTools 为底座，再按是否自治补齐消息、协议和任务相关能力。
-        List<Map<String, Object>> tools = new ArrayList<>(StageConfig.baseTools());
+        List<Map<String, Object>> tools = new ArrayList<>();
+        tools.add(tool("bash", "Run a shell command.", Map.of("type", "object", "properties", Map.of("command", Map.of("type", "string")), "required", List.of("command"))));
+        tools.add(tool("read_file", "Read file contents.", Map.of("type", "object", "properties", Map.of("path", Map.of("type", "string"), "limit", Map.of("type", "integer")), "required", List.of("path"))));
+        tools.add(tool("write_file", "Write content to file.", Map.of("type", "object", "properties", Map.of("path", Map.of("type", "string"), "content", Map.of("type", "string")), "required", List.of("path", "content"))));
+        tools.add(tool("edit_file", "Replace exact text in file.", Map.of("type", "object", "properties", Map.of("path", Map.of("type", "string"), "old_text", Map.of("type", "string"), "new_text", Map.of("type", "string")), "required", List.of("path", "old_text", "new_text"))));
         tools.add(tool("send_message", "Send message to a teammate.", Map.of("type", "object", "properties", Map.of("to", Map.of("type", "string"), "content", Map.of("type", "string"), "msg_type", Map.of("type", "string")), "required", List.of("to", "content"))));
         tools.add(tool("read_inbox", "Read and drain your inbox.", Map.of("type", "object", "properties", Map.of())));
         if (autonomous) {

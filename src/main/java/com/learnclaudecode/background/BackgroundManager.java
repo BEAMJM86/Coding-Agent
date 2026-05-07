@@ -17,6 +17,8 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * 后台任务管理器，提供异步执行与通知机制。
+ *
+ * @author BEAM
  */
 @Slf4j
 public class BackgroundManager {

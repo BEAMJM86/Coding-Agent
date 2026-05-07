@@ -22,10 +22,12 @@ import java.util.Map;
  * 这个类要解决的是 Agent 项目里一个非常现实的问题：
  * 对话越长，发给模型的历史就越多，最终一定会碰到上下文窗口上限。
  *
- * Claude Code 风格的解决思路不是“简单删掉旧消息”，而是分层处理：
+ * Claude Code 风格的解决思路不是”简单删掉旧消息”，而是分层处理：
  * 1. 先做 micro compact：清理旧工具结果中的大文本；
  * 2. 如果还不够，再做 auto compact：把完整对话转存，再生成摘要；
- * 3. 用“摘要 + 确认消息”替换旧历史，让 Agent 能继续干活。
+ * 3. 用”摘要 + 确认消息”替换旧历史，让 Agent 能继续干活。
+ *
+ * @author BEAM
  */
 @Slf4j
 public class CompressionService {

@@ -16,6 +16,8 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * 文件型消息总线，对齐 .team/inbox/*.jsonl 协议。
+ *
+ * @author BEAM
  */
 @Slf4j
 public class MessageBus {

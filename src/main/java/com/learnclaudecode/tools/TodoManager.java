@@ -1,6 +1,8 @@
 package com.learnclaudecode.tools;
 
 import com.learnclaudecode.model.TodoItem;
+import com.learnclaudecode.tools.registry.AgentTool;
+import com.learnclaudecode.tools.registry.AgentToolParam;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -8,24 +10,22 @@ import java.util.Map;
 
 /**
  * Todo 管理器，支持不同字段风格。
+ *
+ * @author BEAM
  */
 public class TodoManager {
     private List<Map<String, Object>> items = new ArrayList<>();
 
-    /**
-     * 校验并更新当前 Todo 列表。
-     *
-     * @param newItems 新的 Todo 项列表
-     * @return 渲染后的 Todo 文本
-     */
-    public String update(List<Map<String, Object>> newItems) {
-        if (newItems.size() > 20) {
+    @AgentTool(name = "todo", description = "Track YOUR OWN work as a personal checklist. Use when you (the lead agent) are doing the work yourself. Each item: text (description), status (pending/in_progress/completed). For delegating work to teammates, use task_create to post tasks on the shared board instead.", required = {"todos"})
+    public String update(
+            @AgentToolParam(description = "Array of todo objects. Each object must have: text (task description), status (pending/in_progress/completed). Optional: id (auto-assigned if omitted).") List<Map<String, Object>> todos) {
+        if (todos.size() > 20) {
             throw new IllegalArgumentException("Max 20 todos allowed");
         }
         int inProgressCount = 0;
         List<Map<String, Object>> validated = new ArrayList<>();
-        for (int i = 0; i < newItems.size(); i++) {
-            Map<String, Object> item = newItems.get(i);
+        for (int i = 0; i < todos.size(); i++) {
+            Map<String, Object> item = todos.get(i);
             String status = String.valueOf(item.getOrDefault("status", "pending")).toLowerCase();
             String text = String.valueOf(item.getOrDefault("text", item.getOrDefault("content", ""))).trim();
             String id = String.valueOf(item.getOrDefault("id", i + 1));
@@ -50,7 +50,7 @@ public class TodoManager {
         if (inProgressCount > 1) {
             throw new IllegalArgumentException("Only one task can be in_progress at a time");
         }
-        items = validated;
+        this.items = validated;
         return render();
     }
 
@@ -77,7 +77,7 @@ public class TodoManager {
         for (Map<String, Object> item : items) {
             String status = String.valueOf(item.get("status"));
             String marker = switch (status) {
-                case "completed" -> "[x]";
+                case "completed" -> "[√]";
                 case "in_progress" -> "[>]";
                 default -> "[ ]";
             };

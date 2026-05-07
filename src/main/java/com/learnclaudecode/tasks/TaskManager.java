@@ -24,6 +24,8 @@ import java.util.stream.Stream;
  * - 多个 Agent 可以通过共享任务目录来协作。
  *
  * Agent 的任务规划系统，本质上也只是状态持久化 + 状态流转规则。
+ *
+ * @author BEAM
  */
 @Slf4j
 public class TaskManager {

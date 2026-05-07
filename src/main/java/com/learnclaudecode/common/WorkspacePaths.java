@@ -7,6 +7,8 @@ import java.nio.file.Path;
 
 /**
  * 工作区路径工具，负责安全路径校验和常用目录访问。
+ *
+ * @author BEAM
  */
 public final class WorkspacePaths {
     private final Path workdir;

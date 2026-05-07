@@ -7,7 +7,9 @@ import java.nio.file.Paths;
 import java.util.Optional;
 
 /**
- * 环境配置读取器
+ * 环境配置读取器，优先读取系统环境变量，其次读取 .env 文件。
+ *
+ * @author BEAM
  */
 public final class EnvConfig {
     private final Dotenv dotenv;

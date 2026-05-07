@@ -15,11 +15,13 @@ import java.util.Map;
 
 /**
  * worktree 管理器，提供任务级别的目录隔离。
- * 这个类负责维护一套轻量的“任务 <-> worktree”映射关系：
+ * 这个类负责维护一套轻量的”任务 &lt;-&gt; worktree”映射关系：
  * 1. 在 .worktrees 下创建和移除独立目录；
  * 2. 在 index.json 中保存当前 worktree 清单；
  * 3. 在 events.jsonl 中追加生命周期事件；
  * 4. 同步更新任务记录里的 worktree 绑定状态。
+ *
+ * @author BEAM
  */
 public class WorktreeManager {
     private final WorkspacePaths paths;

@@ -4,6 +4,8 @@ package com.learnclaudecode.agents;
  * 统一入口启动器。
  *
  * 负责创建应用上下文并启动 Agent 运行时。
+ *
+ * @author BEAM
  */
 public final class Launcher {
     /**

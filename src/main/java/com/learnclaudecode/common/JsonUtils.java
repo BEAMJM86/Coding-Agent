@@ -8,6 +8,8 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 /**
  * JSON 工具类，统一管理序列化与反序列化配置。
+ *
+ * @author BEAM
  */
 public final class JsonUtils {
     public static final ObjectMapper MAPPER = new ObjectMapper()

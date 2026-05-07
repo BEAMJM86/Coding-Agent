@@ -5,6 +5,8 @@ import java.util.Map;
 
 /**
  * 队友消息模型。
+ *
+ * @author BEAM
  */
 public class TeamMessage {
     /**

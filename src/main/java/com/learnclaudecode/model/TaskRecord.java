@@ -4,7 +4,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 任务持久化模型
+ * 任务持久化模型，与 .tasks 目录下的 JSON 文件一一对应。
+ *
+ * @author BEAM
  */
 public class TaskRecord {
     /**
