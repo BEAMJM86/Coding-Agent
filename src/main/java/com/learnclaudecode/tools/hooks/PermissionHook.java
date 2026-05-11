@@ -8,8 +8,11 @@ import java.util.List;
 /**
  * PreToolUse hook：基于黑名单规则检查命令安全性。
  *
+ * @deprecated 由 {@link com.learnclaudecode.permissions.PolicyEngine} 替代。
+ *             保留此文件仅用于向后兼容，新代码请使用 PolicyEngine + BashSafetyAnalyzer。
  * @author BEAM
  */
+@Deprecated(forRemoval = true)
 public class PermissionHook implements ToolHook {
 
     private static final List<String> DANGEROUS = List.of(

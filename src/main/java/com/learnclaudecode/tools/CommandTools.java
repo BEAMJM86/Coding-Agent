@@ -27,6 +27,20 @@ public class CommandTools {
 
     @AgentTool(description = "Execute a shell command in the workspace. Returns combined stdout+stderr. 120s timeout. Use for build, test, file ops (ls/cp/find), git, and running scripts.", required = {"command"})
     public String bash(@AgentToolParam(description = "The shell command to execute. Use Unix-style syntax with forward slashes.") String command) {
+        // 硬编码危险模式防绕过（PolicyEngine 兜底层）
+        if (command != null) {
+            String cmd = command.toLowerCase().replaceAll("\\s+", " ").trim();
+            java.util.List<String> forbidden = java.util.List.of(
+                "sudo ", "shutdown", "reboot", "mkfs ", "dd if=",
+                "rm -rf /", "rm -rf --no-preserve-root",
+                ":(){ :|:& };:", "chmod 777 /", "> /dev/"
+            );
+            for (String f : forbidden) {
+                if (cmd.contains(f)) {
+                    return "Error: Dangerous command blocked by hardcoded security policy: " + f;
+                }
+            }
+        }
         try {
             ProcessBuilder builder = new ProcessBuilder(shellCommand(command));
             builder.directory(paths.workdir().toFile());

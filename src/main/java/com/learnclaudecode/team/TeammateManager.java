@@ -6,7 +6,9 @@ import com.learnclaudecode.common.WorkspacePaths;
 import com.learnclaudecode.model.ChatMessage;
 import com.learnclaudecode.model.TaskRecord;
 import com.learnclaudecode.tasks.TaskManager;
-import com.learnclaudecode.tools.CommandTools;
+import com.learnclaudecode.tools.registry.ToolCall;
+import com.learnclaudecode.tools.registry.ToolContext;
+import com.learnclaudecode.tools.registry.ToolExecutor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
@@ -42,7 +44,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class TeammateManager {
     private final WorkspacePaths paths;
     private final AnthropicClient client;
-    private final CommandTools commandTools;
+    private final ToolExecutor toolExecutor;
     private final MessageBus bus;
     private final TaskManager taskManager;
     private final Path configPath;
@@ -54,18 +56,18 @@ public class TeammateManager {
      *
      * @param paths 工作区路径工具
      * @param client 模型客户端
-     * @param commandTools 命令工具
+     * @param toolExecutor 工具执行器
      * @param bus 消息总线
      * @param taskManager 任务管理器
      */
     public TeammateManager(WorkspacePaths paths,
                            AnthropicClient client,
-                           CommandTools commandTools,
+                           ToolExecutor toolExecutor,
                            MessageBus bus,
                            TaskManager taskManager) {
         this.paths = paths;
         this.client = client;
-        this.commandTools = commandTools;
+        this.toolExecutor = toolExecutor;
         this.bus = bus;
         this.taskManager = taskManager;
         this.configPath = paths.teamDir().resolve("config.json");
@@ -243,15 +245,22 @@ public class TeammateManager {
                 Map<String, Object> input = (Map<String, Object>) block.getOrDefault("input", Map.of());
                 log.debug("队友 {} 执行工具: {}", name, toolName);
                 String output;
-                // 队友工具子集与主代理不同：更强调通信、认领任务和协议响应。
+                // 队友工具通过 ToolExecutor 统一执行（走 PolicyEngine 安全判定）
+                ToolCall call = new ToolCall(
+                        String.valueOf(block.get("id")), toolName, input);
+                ToolContext ctx = new ToolContext(paths, messages, null, null);
+
                 switch (toolName) {
-                    case "bash" -> output = commandTools.bash(String.valueOf(input.get("command")));
-                    case "read_file" -> output = commandTools.readFile(String.valueOf(input.get("path")), null);
-                    case "write_file" -> output = commandTools.writeFile(String.valueOf(input.get("path")), String.valueOf(input.get("content")));
-                    case "edit_file" -> output = commandTools.editFile(String.valueOf(input.get("path")), String.valueOf(input.get("old_text")), String.valueOf(input.get("new_text")));
-                    case "send_message" -> output = bus.send(name, String.valueOf(input.get("to")), String.valueOf(input.get("content")), String.valueOf(input.getOrDefault("msg_type", "message")), Map.of());
-                    case "read_inbox" -> output = JsonUtils.toPrettyJson(bus.readInbox(name));
-                    case "claim_task" -> output = taskManager.claim(((Number) input.get("task_id")).intValue(), name);
+                    case "bash", "read_file", "write_file", "edit_file" ->
+                        output = toolExecutor.execute(call, ctx);
+                    case "send_message" ->
+                        output = bus.send(name, String.valueOf(input.get("to")),
+                                String.valueOf(input.get("content")),
+                                String.valueOf(input.getOrDefault("msg_type", "message")), Map.of());
+                    case "read_inbox" ->
+                        output = JsonUtils.toPrettyJson(bus.readInbox(name));
+                    case "claim_task" ->
+                        output = taskManager.claim(((Number) input.get("task_id")).intValue(), name);
                     case "idle" -> {
                         output = "Entering idle phase.";
                         idleRequested = true;

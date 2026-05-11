@@ -1,5 +1,6 @@
 package com.learnclaudecode.agents;
 
+import com.learnclaudecode.permissions.PermissionMode;
 import com.learnclaudecode.tools.SkillLoader;
 
 import java.nio.file.Path;
@@ -20,6 +21,7 @@ public record StageConfig(
         boolean enableInbox,
         boolean subagentWritable,
         boolean autonomousTeammates,
+        PermissionMode permissionMode,
         String systemTemplate
 ) {
     /**
@@ -36,6 +38,7 @@ public record StageConfig(
      */
     public static StageConfig sFull() {
         return new StageConfig("s_full", true, true, true, true, true, true,
+                PermissionMode.DEFAULT,
                 "You are a Claude Code style coding agent working in ${WORKDIR}.\n" +
                         "\n" +
                         "Your mission is to solve software engineering tasks by using tools, maintaining accurate state, and validating your changes.\n" +
