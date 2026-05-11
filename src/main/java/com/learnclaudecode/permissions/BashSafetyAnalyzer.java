@@ -26,13 +26,19 @@ public class BashSafetyAnalyzer {
     private static final Set<String> SAFE_CMDS = Set.of(
             "ls", "dir", "echo", "cat", "head", "tail", "pwd", "cd",
             "which", "where", "type", "date", "time", "hostname", "whoami",
-            "id", "groups", "env", "printenv", "uname", "arch"
+            "id", "groups", "env", "printenv", "uname", "arch",
+            // Windows PowerShell
+            "get-childitem", "get-content", "get-location", "write-output",
+            "get-date", "get-host", "get-process", "get-service"
     );
 
     private static final Set<String> READ_ONLY_CMDS = Set.of(
             "git", "grep", "find", "wc", "sort", "uniq", "diff", "cmp",
             "du", "df", "free", "ps", "top", "htop", "uptime", "stat",
-            "file", "tree", "less", "more", "man", "info"
+            "file", "tree", "less", "more", "man", "info",
+            // Windows PowerShell
+            "select-string", "get-command", "get-help", "out-file",
+            "test-path", "resolve-path", "get-item", "get-childitem"
     );
 
     private static final Set<String> GIT_DESTRUCTIVE = Set.of(
@@ -42,15 +48,25 @@ public class BashSafetyAnalyzer {
     private static final Set<String> WRITE_CMDS = Set.of(
             "mkdir", "touch", "cp", "mv", "ln", "tar", "zip", "unzip",
             "npm", "yarn", "pnpm", "pip", "cargo", "go", "mvn", "gradle",
-            "docker", "kubectl", "helm"
+            "docker", "kubectl", "helm",
+            // Windows PowerShell
+            "new-item", "copy-item", "move-item", "set-content",
+            "add-content", "mkdir", "ni", "cp", "mv"
     );
 
-    private static final Set<String> DESTRUCTIVE_CMDS = Set.of("rm", "rmdir", "truncate", "del");
+    private static final Set<String> DESTRUCTIVE_CMDS = Set.of(
+            "rm", "rmdir", "truncate", "del",
+            // Windows PowerShell
+            "remove-item", "ri", "rmdir"
+    );
 
     private static final Set<String> DANGEROUS_CMDS = Set.of(
             "sudo", "su", "shutdown", "reboot", "halt", "poweroff",
             "mkfs", "dd", "fdisk", "parted", "mount", "umount",
-            "chmod", "chown", "chgrp", "setfacl"
+            "chmod", "chown", "chgrp", "setfacl",
+            // Windows PowerShell
+            "stop-computer", "restart-computer", "invoke-expression",
+            "iex", "start-process"
     );
 
     private static final List<String> DANGEROUS_PATTERNS = List.of(
@@ -88,13 +104,16 @@ public class BashSafetyAnalyzer {
         int slashIdx = base.lastIndexOf('/');
         if (slashIdx >= 0) base = base.substring(slashIdx + 1);
 
-        if (DANGEROUS_CMDS.contains(base)) return Level.DANGEROUS;
-        if (DESTRUCTIVE_CMDS.contains(base)) return Level.DESTRUCTIVE;
+        // 大小写不敏感匹配（兼容 Windows PowerShell）
+        String lower = base.toLowerCase();
 
-        if ("git".equals(base) && parts.length > 1) {
-            String sub = parts[1];
+        if (DANGEROUS_CMDS.contains(lower)) return Level.DANGEROUS;
+        if (DESTRUCTIVE_CMDS.contains(lower)) return Level.DESTRUCTIVE;
+
+        if ("git".equals(lower) && parts.length > 1) {
+            String sub = parts[1].toLowerCase();
             if (GIT_DESTRUCTIVE.contains(sub)) {
-                String joined = String.join(" ", Arrays.copyOfRange(parts, 1, parts.length));
+                String joined = String.join(" ", Arrays.copyOfRange(parts, 1, parts.length)).toLowerCase();
                 if (joined.contains("--force") || joined.contains("-f")
                         || joined.contains("--hard") || joined.contains("--delete"))
                     return Level.DESTRUCTIVE;
@@ -103,11 +122,11 @@ public class BashSafetyAnalyzer {
             return Level.READ_ONLY;
         }
 
-        if (WRITE_CMDS.contains(base)) return Level.WRITE;
-        if (READ_ONLY_CMDS.contains(base)) return Level.READ_ONLY;
-        if (SAFE_CMDS.contains(base)) return Level.SAFE;
+        if (WRITE_CMDS.contains(lower)) return Level.WRITE;
+        if (READ_ONLY_CMDS.contains(lower)) return Level.READ_ONLY;
+        if (SAFE_CMDS.contains(lower)) return Level.SAFE;
 
-        if (("npm".equals(base) || "yarn".equals(base) || "pnpm".equals(base))
+        if (("npm".equals(lower) || "yarn".equals(lower) || "pnpm".equals(lower))
                 && parts.length > 1 && "run".equals(parts[1])) return Level.UNKNOWN;
 
         return Level.UNKNOWN;

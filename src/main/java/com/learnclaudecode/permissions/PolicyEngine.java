@@ -4,6 +4,7 @@ import com.learnclaudecode.tools.registry.ToolCall;
 import com.learnclaudecode.tools.registry.ToolContext;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
@@ -29,6 +30,14 @@ public class PolicyEngine {
 
     private final Map<String, Integer> denialCounts = new ConcurrentHashMap<>();
     private static final int ESCALATION_THRESHOLD = 3;
+
+    // 安全工具白名单 — 只读或非破坏性操作，无需确认直接放行
+    private static final Set<String> SAFE_TOOLS = Set.of(
+            "read_file", "task_list", "task_get", "todo", "TodoWrite",
+            "Grep", "Glob", "read_inbox", "list_teammates",
+            "task", "load_skill", "check_background", "worktree_list",
+            "SendMessage", "idle", "compact"
+    );
 
     public PolicyEngine(PermissionRules rules,
                         TrustStore trustStore,
@@ -102,6 +111,11 @@ public class PolicyEngine {
         // ④ 工具安全检查
         PermissionDecision safetyDecision = checkToolSafety(call);
         if (safetyDecision instanceof PermissionDecision.Deny) return safetyDecision;
+
+        // ④.5 安全工具白名单 — 只读/非破坏性工具自动放行
+        if (SAFE_TOOLS.contains(toolName)) {
+            return new PermissionDecision.Allow("Safe tool", call.input());
+        }
 
         // ⑤ BYPASS 模式
         if (mode == PermissionMode.BYPASS) {

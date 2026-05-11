@@ -119,7 +119,9 @@ public class ToolEntry {
     private Object convert(Object value, Class<?> target) {
         if (value == null) {
             if (target == int.class || target == Integer.class) return 0;
+            if (target == long.class || target == Long.class) return 0L;
             if (target == boolean.class || target == Boolean.class) return false;
+            if (List.class.isAssignableFrom(target)) return List.of();
             return "";
         }
         if (target == String.class) return String.valueOf(value);
