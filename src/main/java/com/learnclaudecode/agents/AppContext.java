@@ -64,6 +64,9 @@ public final class AppContext {
         registry.scan(new TaskTools(taskManager));
         registry.scan(new WorktreeTools(new WorktreeManager(paths, taskManager)));
         registry.scan(new BackgroundTools(backgroundManager));
+        registry.scan(new GlobTool(paths.workdir()));        // Glob
+        registry.scan(new GrepTool(paths.workdir()));        // Grep
+        registry.scan(new AskUserQuestionTool(new Scanner(System.in))); // AskUserQuestion
 
         // hook 链 + PolicyEngine 固定层
         ToolExecutor toolExecutor = new ToolExecutor(registry,
@@ -80,6 +83,7 @@ public final class AppContext {
         this.runtime = new AgentRuntime(client, paths, toolExecutor, registry,
                 compressionService, todoManager, skillLoader,
                 backgroundManager, messageBus, policyEngine);
+        registry.scan(this.runtime);     // task (subagent)
     }
 
     public AgentRuntime runtime() {

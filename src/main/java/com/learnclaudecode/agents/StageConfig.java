@@ -63,9 +63,10 @@ public record StageConfig(
                         "Do not create shared tasks for every tiny personal step.\n" +
                         "Use todo for personal execution details.\n" +
                         "\n" +
-                        "4. task\n" +
-                        "Use this to spawn a short-lived subagent for isolated exploration or a contained subtask.\n" +
-                        "Use it when extra context separation is useful.\n" +
+                        "4. subagent\n" +
+                        "Use this to spawn an isolated short-lived subagent for complex multi-step tasks.\n" +
+                        "The subagent runs independently with its own context and returns one final message.\n" +
+                        "NOT the same as task_create/task_update — those manage the shared task board.\n" +
                         "\n" +
                         "5. Team tools\n" +
                         "When acting as a team lead, use teammates for parallel work.\n" +
@@ -89,7 +90,7 @@ public record StageConfig(
                         "- Personal immediate steps -> todo.\n" +
                         "- Shared durable project work -> task_create.\n" +
                         "- Delegated work -> task_create plus teammate communication.\n" +
-                        "- Independent exploration -> task subagent.\n" +
+                        "- Independent exploration -> subagent.\n" +
                         "- Long-running command -> background_run.\n" +
                         "- Parallel file-changing work -> task_create plus worktree_create.\n" +
                         "\n" +

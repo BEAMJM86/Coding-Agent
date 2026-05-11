@@ -2,6 +2,7 @@ package com.learnclaudecode.permissions;
 
 import com.learnclaudecode.common.JsonUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -13,11 +14,14 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 信任记忆：持久化用户「总是放行」选择到 settings.json。
+ * 信任记忆：持久化用户「总是放行」选择。
+ * 项目级 → .coding-agent/settings.local.json（不提交）
+ * 全局级 → ~/.coding-agent/settings.json
  * 两层：内存 Map（会话级 O(1) 匹配）+ 磁盘 JSON（跨会话持久化）。
  *
  * @author BEAM
  */
+@Slf4j
 public class TrustStore {
 
     private final Path projectConfigPath;
@@ -25,17 +29,17 @@ public class TrustStore {
     private final Map<String, String> sessionAllow = new ConcurrentHashMap<>();
 
     public TrustStore(Path workspaceRoot) {
-        this.projectConfigPath = workspaceRoot.resolve(".coding-agent").resolve("settings.json");
+        this.projectConfigPath = workspaceRoot.resolve(".coding-agent").resolve("settings.local.json");
         String userHome = System.getProperty("user.home");
         this.globalConfigPath = Path.of(userHome, ".coding-agent", "settings.json");
     }
 
     /**
-     * 加载磁盘上的 allow 规则到内存。
+     * 加载磁盘上的 allow 规则到内存（项目级 + 全局级）。
      */
     public void load() {
-        loadFrom(projectConfigPath);
         loadFrom(globalConfigPath);
+        loadFrom(projectConfigPath);
     }
 
     @SuppressWarnings("unchecked")
@@ -51,7 +55,7 @@ public class TrustStore {
                 sessionAllow.put(rule, "allow");
             }
         } catch (IOException e) {
-            // 文件不存在或格式错误，跳过
+            log.warn("读取 allow 规则失败 {}: {}", path, e.getMessage());
         }
     }
 
@@ -104,7 +108,8 @@ public class TrustStore {
                 allow.add(entry);
             }
             Files.writeString(path, JsonUtils.toPrettyJson(config));
-        } catch (IOException ignored) {
+        } catch (IOException e) {
+            log.error("写入 allow 规则失败 {}: {}", path, e.getMessage());
         }
     }
 

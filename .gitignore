@@ -6,3 +6,7 @@ target/
 .team/
 .worktrees/
 /temp/log.txt
+.claude/
+.coding-agent/
+doc/
+docs/

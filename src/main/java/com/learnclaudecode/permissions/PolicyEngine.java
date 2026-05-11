@@ -31,11 +31,20 @@ public class PolicyEngine {
     private final Map<String, Integer> denialCounts = new ConcurrentHashMap<>();
     private static final int ESCALATION_THRESHOLD = 3;
 
-    // 安全工具白名单 — 只读或非破坏性操作，无需确认直接放行
+    // 安全工具白名单 — 只读、非破坏性或纯协调操作，无需确认直接放行
     private static final Set<String> SAFE_TOOLS = Set.of(
-            "read_file", "task_list", "task_get", "todo", "TodoWrite",
-            "Grep", "Glob", "read_inbox", "list_teammates",
-            "task", "load_skill", "check_background", "worktree_list",
+            "read_file", "Grep", "Glob", "AskUserQuestion",
+            "todo", "TodoWrite",
+            // 任务板 — 纯协调，不修改代码文件
+            "task_create", "task_update", "task_list", "task_get", "claim_task",
+            // 子代理 & 技能
+            "subagent", "load_skill",
+            // 多 Agent 协作
+            "spawn_teammate", "list_teammates", "shutdown_request", "plan_approval",
+            "send_message", "read_inbox", "broadcast",
+            // 后台 & 工作树
+            "check_background", "worktree_list",
+            // 消息 & 空闲
             "SendMessage", "idle", "compact"
     );
 
@@ -108,9 +117,10 @@ public class PolicyEngine {
             }
         }
 
-        // ④ 工具安全检查
+        // ④ 工具安全检查（Allow/Deny 均提前返回，Ask/null 继续后续流程）
         PermissionDecision safetyDecision = checkToolSafety(call);
         if (safetyDecision instanceof PermissionDecision.Deny) return safetyDecision;
+        if (safetyDecision instanceof PermissionDecision.Allow) return safetyDecision;
 
         // ④.5 安全工具白名单 — 只读/非破坏性工具自动放行
         if (SAFE_TOOLS.contains(toolName)) {

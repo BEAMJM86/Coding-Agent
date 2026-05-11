@@ -4,7 +4,9 @@ import com.learnclaudecode.common.WorkspacePaths;
 import com.learnclaudecode.tools.registry.AgentTool;
 import com.learnclaudecode.tools.registry.AgentToolParam;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,7 +35,7 @@ public class CommandTools {
             java.util.List<String> forbidden = java.util.List.of(
                 "sudo ", "shutdown", "reboot", "mkfs ", "dd if=",
                 "rm -rf /", "rm -rf --no-preserve-root",
-                ":(){ :|:& };:", "chmod 777 /", "> /dev/"
+                ":(){ :|:& };:", "chmod 777 /"
             );
             for (String f : forbidden) {
                 if (cmd.contains(f)) {
@@ -44,22 +46,32 @@ public class CommandTools {
         try {
             ProcessBuilder builder = new ProcessBuilder(shellCommand(command));
             builder.directory(paths.workdir().toFile());
+            builder.redirectErrorStream(true);
             Process process = builder.start();
+            // 在独立线程中读取输出，防止管道缓冲区满导致进程死锁
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            Thread reader = new Thread(() -> {
+                try (InputStream in = process.getInputStream()) {
+                    in.transferTo(buffer);
+                } catch (IOException ignored) {
+                }
+            }, "bash-reader");
+            reader.start();
             boolean finished = process.waitFor(120, TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
+                reader.interrupt();
                 return "Error: Timeout (120s)";
             }
-            String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            String stderr = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-            String out = (stdout + stderr).trim();
+            reader.join(5000);
+            String out = buffer.toString(StandardCharsets.UTF_8).trim();
             if (out.isBlank()) {
                 return "(no output)";
             }
             return out.substring(0, Math.min(50000, out.length()));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return "Error: " + e.getMessage();
+            return "Error: interrupted";
         } catch (IOException e) {
             return "Error: " + e.getMessage();
         }
@@ -85,6 +97,8 @@ public class CommandTools {
             }
             String text = String.join("\n", lines);
             return text.substring(0, Math.min(50000, text.length()));
+        } catch (java.nio.file.NoSuchFileException e) {
+            return "Error: File not found: " + path;
         } catch (Exception e) {
             return "Error: " + e.getMessage();
         }

@@ -1,6 +1,7 @@
 package com.learnclaudecode.permissions;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.List;
@@ -42,8 +43,10 @@ public class FileSafetyChecker {
 
     /**
      * 检查写入/编辑前的文件状态。
+     * 新文件自动放行，已有文件需通过保护检查、读前校验、指纹校验。
      */
     public PermissionDecision checkBeforeWrite(String relativePath, String currentContent) {
+        // 保护目录/文件检查（无论新旧文件均生效）
         String filename = Path.of(relativePath).getFileName().toString();
         for (String dir : PROTECTED_DIRS) {
             if (relativePath.startsWith(dir + "/") || relativePath.startsWith(dir + "\\")) {
@@ -63,6 +66,13 @@ public class FileSafetyChecker {
                     List.of("确认修改 lockfile"));
         }
 
+        // 新文件自动放行，无需用户确认
+        Path resolved = Path.of(relativePath);
+        if (!Files.exists(resolved)) {
+            return new PermissionDecision.Allow("New file creation", Map.of());
+        }
+
+        // 以下仅对已存在文件生效
         String existingHash = readFingerprints.get(relativePath);
         if (existingHash == null && currentContent != null && !currentContent.isEmpty()) {
             return new PermissionDecision.Deny(
@@ -77,13 +87,6 @@ public class FileSafetyChecker {
                         "File changed since last read: " + relativePath,
                         DecisionReason.safety("stale-read"));
             }
-        }
-
-        if ((relativePath.endsWith(".md") || relativePath.endsWith(".markdown"))
-                && currentContent == null) {
-            return new PermissionDecision.Ask(
-                    "Allow creating .md file: " + filename + "?",
-                    List.of("确认创建文档"));
         }
 
         return null;

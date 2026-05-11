@@ -12,6 +12,8 @@ import com.learnclaudecode.team.MessageBus;
 import com.learnclaudecode.tools.SkillLoader;
 import com.learnclaudecode.tools.TodoManager;
 import com.learnclaudecode.tools.hooks.OutputTruncator;
+import com.learnclaudecode.tools.registry.AgentTool;
+import com.learnclaudecode.tools.registry.AgentToolParam;
 import com.learnclaudecode.tools.registry.ToolCall;
 import com.learnclaudecode.tools.registry.ToolContext;
 import com.learnclaudecode.tools.registry.ToolExecutor;
@@ -236,18 +238,17 @@ public class AgentRuntime {
 
     /**
      * 使用独立上下文执行一个子代理任务。
-     *
-     * @param prompt 子代理的任务提示词
-     * @param writable 是否赋予写权限
-     * @return 子代理的最终回复文本；失败时返回 "(subagent failed)"
+     * 子代理有独立的对话历史，不与主代理共享上下文。
      */
-    private String runSubagent(String prompt, boolean writable) {
-        log.info("启动子代理，任务: {}, 可写: {}", prompt, writable);
-        ToolRegistry subRegistry = writable
-                ? registry.subset(Set.of(
-                        "bash", "read_file", "write_file", "edit_file",
-                        "todo", "task_list", "task_get"))
-                : registry.readOnly();
+    @AgentTool(name = "subagent", description = "Spawn an isolated subagent to handle a complex, multi-step task autonomously. The subagent has its own conversation context (not shared with the main agent), runs tools independently, and returns one final summary message. Use this for parallel work, independent exploration, or when context separation is beneficial. Available types: general-purpose (default, full tool access), Explore (fast read-only file search), Plan (design & architecture planning). NOT related to task_create/task_update — those are for the shared task board, this is for launching independent workers.")
+    public String runSubagent(
+            @AgentToolParam(description = "The task for the agent to perform") String prompt,
+            @AgentToolParam(description = "The type of specialized agent. general-purpose (default if omitted), Explore (fast file search), Plan (design planning).") String subagent_type) {
+        log.debug("启动子代理，任务: {}", prompt != null ? prompt.substring(0, Math.min(80, prompt.length())) : "");
+        ToolRegistry subRegistry = registry.subset(Set.of(
+                "bash", "read_file", "write_file", "edit_file",
+                "Glob", "Grep",
+                "todo", "task_list", "task_get"));
 
         // 子代理复用主 PolicyEngine 组件，但设置 DONT_ASK + shouldAvoidPrompts
         PolicyEngine subPolicy = new PolicyEngine(
