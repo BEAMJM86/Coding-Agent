@@ -186,7 +186,7 @@ public class TeammateManager {
      * @param autonomous 是否自治
      */
     private void loop(String name, String role, String prompt, boolean autonomous) {
-        log.info("队友 {} 开始循环，角色: {}，自治: {}", name, role, autonomous);
+        log.debug("队友 {} 开始循环，角色: {}，自治: {}", name, role, autonomous);
         String teamName = String.valueOf(loadConfig().getOrDefault("team_name", "default"));
         String system = autonomous
                 ? "You are '" + name + "', role: " + role + ", team: " + teamName + ", at " + paths.workdir() + ". Use idle when done. You may auto-claim tasks. When using send_message, the recipient must be 'lead', and msg_type must be one of: message, shutdown_response, plan_approval_response. Use claim_task to claim tasks — do not send claim_task messages."
@@ -206,7 +206,7 @@ public class TeammateManager {
             for (Map<String, Object> inboxMessage : inbox) {
                 if ("shutdown_request".equals(inboxMessage.get("type"))) {
                     if (autonomous) {
-                        log.info("[team] {} 收到来自 {} 的关闭请求", name, String.valueOf(inboxMessage.get("from")));
+                        log.debug("[team] {} 收到来自 {} 的关闭请求", name, String.valueOf(inboxMessage.get("from")));
                         setStatus(name, "shutdown");
                         return;
                     }
@@ -274,7 +274,7 @@ public class TeammateManager {
                         }
                         output = bus.send(name, "lead", String.valueOf(input.getOrDefault("reason", "")), "shutdown_response", Map.of("request_id", reqId, "approve", approve));
                         if (approve) {
-                            log.info("队友 {} 批准关闭请求", name);
+                            log.debug("队友 {} 批准关闭请求", name);
                             setStatus(name, "shutdown");
                             return;
                         }

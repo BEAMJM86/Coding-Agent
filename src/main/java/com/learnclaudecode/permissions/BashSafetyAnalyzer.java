@@ -38,7 +38,7 @@ public class BashSafetyAnalyzer {
             "file", "tree", "less", "more", "man", "info",
             // Windows PowerShell
             "select-string", "get-command", "get-help", "out-file",
-            "test-path", "resolve-path", "get-item", "get-childitem"
+            "test-path", "resolve-path", "get-item"
     );
 
     private static final Set<String> GIT_DESTRUCTIVE = Set.of(
@@ -51,13 +51,13 @@ public class BashSafetyAnalyzer {
             "docker", "kubectl", "helm",
             // Windows PowerShell
             "new-item", "copy-item", "move-item", "set-content",
-            "add-content", "mkdir", "ni", "cp", "mv"
+            "add-content", "ni"
     );
 
     private static final Set<String> DESTRUCTIVE_CMDS = Set.of(
             "rm", "rmdir", "truncate", "del",
             // Windows PowerShell
-            "remove-item", "ri", "rmdir"
+            "remove-item", "ri"
     );
 
     private static final Set<String> DANGEROUS_CMDS = Set.of(

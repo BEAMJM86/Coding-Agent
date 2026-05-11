@@ -177,7 +177,7 @@ public class TaskManager {
      * @return 认领结果
      */
     public synchronized String claim(int taskId, String owner) {
-        log.info("任务 {} 被 {} 认领", taskId, owner);
+        log.debug("任务 {} 被 {} 认领", taskId, owner);
         TaskRecord task = load(taskId);
         task.owner = owner;
         task.status = "in_progress";

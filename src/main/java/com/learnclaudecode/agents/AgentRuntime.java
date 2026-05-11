@@ -107,7 +107,7 @@ public class AgentRuntime {
                 log.debug("用户退出: {}", query);
                 break;
             }
-            log.info("用户输入: {}", query);
+            log.debug("用户输入: {}", query);
             // 用户输入进入 Agent 的消息历史。
             history.add(new ChatMessage("user", query));
             agentLoop(history, config);
@@ -186,7 +186,7 @@ public class AgentRuntime {
                 String toolName = String.valueOf(block.get("name"));
                 @SuppressWarnings("unchecked")
                 Map<String, Object> input = (Map<String, Object>) block.getOrDefault("input", Map.of());
-                log.debug("执行工具: {}", toolName);
+                log.info("执行工具: {}", toolName);
 
                 String output;
                 if ("compact".equals(toolName)) {
@@ -280,7 +280,7 @@ public class AgentRuntime {
                     8000);
             subMessages.add(new ChatMessage("assistant", response.content()));
             if (!"tool_use".equals(response.stop_reason())) {
-                log.info("子代理完成任务");
+                log.debug("子代理完成任务");
                 return response.content().stream()
                         .filter(block -> block.containsKey("text"))
                         .map(block -> String.valueOf(block.get("text")))
