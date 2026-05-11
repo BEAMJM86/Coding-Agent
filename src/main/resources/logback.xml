@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
+    <!-- 通过系统属性控制日志级别：默认 INFO，传 -Dlog.level=DEBUG 开启调试日志 -->
+    <property name="LOG_LEVEL" value="${log.level:-INFO}"/>
+
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
             <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
 
-    <logger name="com.learnclaudecode" level="DEBUG"/>
+    <logger name="com.learnclaudecode" level="${LOG_LEVEL}"/>
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>

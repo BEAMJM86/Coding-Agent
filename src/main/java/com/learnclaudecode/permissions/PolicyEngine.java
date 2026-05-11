@@ -164,17 +164,26 @@ public class PolicyEngine {
                 yield bashSafety.checkPermission(cmd);
             }
             case "write_file", "edit_file" -> {
-                String path = call.input("file_path");
+                String path = getFilePath(call);
                 yield fileSafety.checkBeforeWrite(path, null);
             }
             default -> null;
         };
     }
 
+    /**
+     * 模型可能使用 path 或 file_path 作为写文件参数名，两者都尝试。
+     */
+    private String getFilePath(ToolCall call) {
+        String p = call.input("file_path");
+        if (p.isEmpty()) p = call.input("path");
+        return p;
+    }
+
     private String getPermissionContent(ToolCall call) {
         return switch (call.name()) {
             case "bash" -> call.input("command");
-            case "write_file", "edit_file", "read_file" -> call.input("file_path");
+            case "write_file", "edit_file", "read_file" -> getFilePath(call);
             default -> "";
         };
     }
@@ -182,8 +191,8 @@ public class PolicyEngine {
     private String buildDetail(ToolCall call) {
         return switch (call.name()) {
             case "bash" -> call.input("command");
-            case "write_file" -> "write: " + call.input("file_path");
-            case "edit_file" -> "edit: " + call.input("file_path");
+            case "write_file" -> "write: " + getFilePath(call);
+            case "edit_file" -> "edit: " + getFilePath(call);
             default -> call.name();
         };
     }

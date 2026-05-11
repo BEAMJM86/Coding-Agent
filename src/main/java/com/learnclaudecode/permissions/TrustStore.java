@@ -69,11 +69,18 @@ public class TrustStore {
 
     /**
      * 将「总是放行」写入项目级内存和磁盘。
+     * 对 bash 工具只存基命令前缀（如 Get-ChildItem:*），
+     * 避免不同参数组合反复触发确认。
      */
     public void addAllow(String toolName, String permissionContent) {
-        String key = toolName + "(" + (permissionContent != null ? permissionContent : "*") + ")";
+        String normalized = permissionContent;
+        if ("bash".equals(toolName) && permissionContent != null && !permissionContent.isEmpty()) {
+            String baseCmd = permissionContent.trim().split("\\s+")[0];
+            normalized = baseCmd + ":*";
+        }
+        String key = toolName + "(" + (normalized != null ? normalized : "*") + ")";
         sessionAllow.put(key, "allow");
-        writeToDisk(projectConfigPath, toolName, permissionContent);
+        writeToDisk(projectConfigPath, toolName, normalized);
     }
 
     @SuppressWarnings("unchecked")

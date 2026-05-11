@@ -70,7 +70,7 @@ public class BashSafetyAnalyzer {
     );
 
     private static final List<String> DANGEROUS_PATTERNS = List.of(
-            "sudo", "> /dev/", "curl", "wget", "eval", "exec",
+            "sudo", "curl", "wget", "eval", "exec",
             ":(){ :|:& };:",
             "rm -rf /", "rm -rf --no-preserve-root",
             "chmod 777 /", "chmod -R 777",

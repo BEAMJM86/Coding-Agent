@@ -14,12 +14,12 @@ public class AuditHook implements ToolHook {
 
     @Override
     public String intercept(ToolCall call, ToolContext ctx, Proceed next) {
-        log.info("TOOL_START name={} input={}", call.name(), call.input());
+        log.debug("TOOL_START name={} input={}", call.name(), call.input());
         long start = System.currentTimeMillis();
         try {
             String result = next.proceed();
             long elapsed = System.currentTimeMillis() - start;
-            log.info("TOOL_END name={} elapsed={}ms output_len={}",
+            log.debug("TOOL_END name={} elapsed={}ms output_len={}",
                     call.name(), elapsed, result != null ? result.length() : 0);
             return result;
         } catch (Exception e) {

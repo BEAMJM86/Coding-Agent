@@ -1,5 +1,7 @@
 package com.learnclaudecode.permissions;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Scanner;
 import java.util.function.Consumer;
 
@@ -14,6 +16,8 @@ public class UserConfirmation {
     public enum Choice {
         ALLOW_ONCE, ALLOW_ALWAYS, DENY, TELL_ALTERNATIVE
     }
+
+    private static final int BOX_WIDTH = 70;
 
     private final Scanner scanner;
     private final TrustStore trustStore;
@@ -36,17 +40,19 @@ public class UserConfirmation {
      * @param permissionContent 用于持久化的规则内容
      */
     public Choice ask(String toolName, String detail, String permissionContent) {
+        String bar = "═".repeat(BOX_WIDTH - 2);
+
         System.out.println();
-        System.out.println("╔══════════════════════════════════════╗");
-        System.out.println("║  Security Check                      ║");
-        System.out.println("╠══════════════════════════════════════╣");
-        System.out.printf("║  %-36s ║%n", toolName + ": " + truncate(detail, 28));
-        System.out.println("╠══════════════════════════════════════╣");
-        System.out.println("║  1. 放行一次                          ║");
-        System.out.println("║  2. 总是放行（本项目）                 ║");
-        System.out.println("║  3. 拒绝                              ║");
-        System.out.println("║  4. 告诉 Claude 改做什么              ║");
-        System.out.println("╚══════════════════════════════════════╝");
+        System.out.println("╔" + bar + "╗");
+        printRow("Security Check");
+        System.out.println("╠" + bar + "╣");
+        printRow(toolName + ": " + detail);
+        System.out.println("╠" + bar + "╣");
+        printRow("1. 放行一次");
+        printRow("2. 总是放行（本项目）");
+        printRow("3. 拒绝");
+        printRow("4. 告诉 Claude 改做什么");
+        System.out.println("╚" + bar + "╝");
         System.out.print("选择 [1-4]: ");
 
         while (true) {
@@ -70,7 +76,29 @@ public class UserConfirmation {
         }
     }
 
-    private String truncate(String s, int max) {
-        return s.length() <= max ? s : s.substring(0, max - 3) + "...";
+    private void printRow(String text) {
+        int contentWidth = BOX_WIDTH - 4;
+        for (String line : wrapLines(text, contentWidth)) {
+            System.out.printf("║ %-" + contentWidth + "s║%n", line);
+        }
+    }
+
+    private static List<String> wrapLines(String text, int maxWidth) {
+        List<String> lines = new ArrayList<>();
+        if (text == null || text.isEmpty()) {
+            lines.add("");
+            return lines;
+        }
+        while (text.length() > maxWidth) {
+            int cut = maxWidth;
+            // 避免在 CJK 字符中间截断
+            while (cut > maxWidth - 4 && cut > 0 && Character.isSurrogatePair(text.charAt(cut - 1))) {
+                cut--;
+            }
+            lines.add(text.substring(0, cut));
+            text = text.substring(cut);
+        }
+        lines.add(text);
+        return lines;
     }
 }
